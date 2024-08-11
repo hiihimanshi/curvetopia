@@ -61,3 +61,12 @@
 .feature-button:active {
     transform: translateY(0);
 }
+.processed-image-section {
+    margin-top: 20px;
+}
+
+.processed-image {
+    max-width: 100%;
+    height: auto;
+    display: block;
+}
