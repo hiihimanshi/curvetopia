@@ -84,7 +84,7 @@ def regularize_shapes(image):
 # Main script
 if __name__ == "__main__":
     # Load and preprocess the image
-    image = cv2.imread('circle.png', cv2.IMREAD_GRAYSCALE)
+    image = cv2.imread('image.png', cv2.IMREAD_GRAYSCALE)
     if image is None:
         print("Error: Could not load image. Check the file path.")
         exit()
