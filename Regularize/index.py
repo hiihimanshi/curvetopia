@@ -186,8 +186,8 @@ def plot_and_save_detected_shapes(paths, shapes, output_image_path):
     plt.show()
 
 # Example usage
-csv_path = '../Data/frag1.csv'  # Ensure the path is correct
-output_image_path = '../Data/detected_shapes.png'
+csv_path = '../Regularize/frag1.csv'  # Ensure the path is correct
+output_image_path = '../Regularize/detected_shapes.png'
 
 # Read path data from CSV
 path_XYs = read_csv(csv_path)
