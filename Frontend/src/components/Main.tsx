@@ -90,7 +90,7 @@ const Cards: React.FC = () => {
         formData.append('feature', feature);
 
         // Send the image and selected feature to the Flask backend
-        fetch('http://localhost:5000/process_image', {
+        fetch('https://curvetopia-ljro.onrender.com/process_image', {
             method: 'POST',
             body: formData,
         })
