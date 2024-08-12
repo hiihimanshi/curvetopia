@@ -57,13 +57,14 @@
 // };
 
 // export default Cards;
-
 import React, { useState } from 'react';
 import "./Card.css";
 
 const Cards: React.FC = () => {
     const [image, setImage] = useState<File | null>(null);
     const [imagePreview, setImagePreview] = useState<string | ArrayBuffer | null>(null);
+    const [result, setResult] = useState<string | null>(null); // State to store the result
+    const [processedImage, setProcessedImage] = useState<string | null>(null); // State to store processed image URL
 
     // Function to handle image upload
     const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -98,12 +99,17 @@ const Cards: React.FC = () => {
             if (!response.ok) {
                 throw new Error('Network response was not ok');
             }
-            return response.blob();
+            return feature === 'Symmetry' ? response.json() : response.blob();
         })
-        .then((blob) => {
-            const url = URL.createObjectURL(blob);
-            // Open the processed image in a new window
-            window.open(url);
+        .then((data) => {
+            if (feature === 'Symmetry') {
+                setResult(JSON.stringify(data, null, 2)); // Convert the symmetry result to formatted JSON string
+                setProcessedImage(null); // Clear processed image if it's not an image result
+            } else {
+                const url = URL.createObjectURL(data as Blob);
+                setProcessedImage(url); // Set the processed image URL
+                setResult(null); // Clear text result if it's not a text response
+            }
         })
         .catch((error) => console.error('Error:', error));
     };
@@ -129,15 +135,29 @@ const Cards: React.FC = () => {
                         </button>
                         <button 
                             className="feature-button" 
-                            onClick={() => handleFeatureClick('Regularized')}>
-                            Plannerized
-                        </button>
-                        <button 
-                            className="feature-button" 
                             onClick={() => handleFeatureClick('Plannerized')}>
                             Regularized
                         </button>
+                        <button 
+                            className="feature-button" 
+                            onClick={() => handleFeatureClick('Regularized')}>
+                            Planerized
+                        </button>
                     </div>
+                </div>
+            )}
+            {result && (
+                <div className="result-section">
+                    <h3 style={{ color:'black', fontSize:'25px'}}>Result:</h3>
+                    <pre style={{ backgroundColor: ' #32CD32', padding: '20px', borderRadius: '8px', color:'white'}}>
+                        <code>{result}</code>
+                    </pre>
+                </div>
+            )}
+            {processedImage && (
+                <div className="processed-image-section">
+                    <h3>Processed Image:</h3>
+                    <img src={processedImage} alt="Processed" className="processed-image" />
                 </div>
             )}
         </div>
@@ -145,3 +165,4 @@ const Cards: React.FC = () => {
 };
 
 export default Cards;
+
