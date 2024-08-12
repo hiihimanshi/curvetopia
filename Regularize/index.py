@@ -1,204 +1,183 @@
-import cv2
+import pandas as pd
 import numpy as np
+import cv2
+from scipy.interpolate import UnivariateSpline, interp1d
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-import svgwrite
 
-# Function to read CSV file
-def read_csv(csv_path):
-    try:
-        np_path_XYs = np.genfromtxt(csv_path, delimiter=',')
-        path_XYs = []
-        
-        unique_paths = np.unique(np_path_XYs[:, 0])
-        for i in unique_paths:
-            npXYs = np_path_XYs[np_path_XYs[:, 0] == i][:, 1:]
-            XYs = []
-            unique_points = np.unique(npXYs[:, 0])
-            for j in unique_points:
-                XY = npXYs[npXYs[:, 0] == j][:, 1:]
-                XYs.append(XY)
-            path_XYs.append(np.vstack(XYs))  # Combine all points in the path
-            
-        return path_XYs
-    except Exception as e:
-        print(f"Failed to read CSV file: {e}")
-        return []
+# Load and process data
+data = pd.read_csv("regularize\frag2.csv", header=None, names=['CurveID', 'ShapeType', 'XCoord', 'YCoord'])
 
-# Function to detect if a path is a straight line
-def is_straight_line(points, threshold=10.0):
-    x = points[:, 0]
-    y = points[:, 1]
-    A = np.vstack([x, np.ones(len(x))]).T
-    m, c = np.linalg.lstsq(A, y, rcond=None)[0]
-    fit_line = m * x + c
-    mse = np.mean((y - fit_line) ** 2)
-    return mse < threshold, (m, c)
+# Function to smooth curve points
+def smooth_curve(x_vals, y_vals, smooth_factor=0):
+    spline_x = UnivariateSpline(range(len(x_vals)), x_vals, s=smooth_factor)
+    spline_y = UnivariateSpline(range(len(y_vals)), y_vals, s=smooth_factor)
+    return spline_x(range(len(x_vals))), spline_y(range(len(y_vals)))
 
-# Function to fit a circle to a path
-def fit_circle(points):
-    x = points[:, 0]
-    y = points[:, 1]
-    A = np.vstack([x, y, np.ones(len(x))]).T
-    B = x**2 + y**2
-    C, _, _, _ = np.linalg.lstsq(A, B, rcond=None)
-    xc, yc = C[0]/2, C[1]/2
-    radius = np.sqrt(C[2] + xc**2 + yc**2)
-    return xc, yc, radius
+# Function to interpolate curve points
+def interpolate_curve(x_vals, y_vals, num_points):
+    t_vals = np.linspace(0, 1, len(x_vals))
+    interp_x = interp1d(t_vals, x_vals, kind='linear')
+    interp_y = interp1d(t_vals, y_vals, kind='linear')
+    t_new = np.linspace(0, 1, num_points)
+    return interp_x(t_new), interp_y(t_new)
 
-# Function to detect if a path is a circle
-def is_circle(points, threshold=10.0):
-    xc, yc, radius = fit_circle(points)
-    distances = np.sqrt((points[:, 0] - xc)**2 + (points[:, 1] - yc)**2)
-    return np.std(distances) < threshold, (xc, yc, radius)
+# Function to create an image from points
+def create_image_from_points(points, img_width=1000, img_height=1000):
+    image = np.zeros((img_height, img_width), dtype=np.uint8)
+    for x, y in points:
+        if 0 <= int(y) < img_height and 0 <= int(x) < img_width:
+            image[int(y), int(x)] = 255
+    return image
 
-# Function to fit an ellipse to a path
-def fit_ellipse(points):
-    x = points[:, 0]
-    y = points[:, 1]
-    
-    D1 = np.vstack([x**2, x*y, y**2]).T
-    D2 = np.vstack([x, y, np.ones(len(x))]).T
-    S1 = np.dot(D1.T, D1)
-    S2 = np.dot(D1.T, D2)
-    S3 = np.dot(D2.T, D2)
-    T = -np.linalg.inv(S3).dot(S2.T)
-    M = S1 + S2.dot(T)
-    M = np.array([M[2] / 2, -M[1], M[0] / 2])
-    eigval, eigvec = np.linalg.eig(M)
-    cond = 4 * eigvec[0] * eigvec[2] - eigvec[1]**2
-    a1 = eigvec[:, cond > 0]
-    
-    a = np.concatenate([a1, T.dot(a1)])
-    a = a.ravel()
-    
-    # Ellipse parameters
-    b, c, d, f, g, a = a[1] / 2, a[2], a[3] / 2, a[4] / 2, a[5], a[0]
-    num = b * b - a * c
-    x0 = (c * d - b * f) / num
-    y0 = (a * f - b * d) / num
-    
-    F = 1 + (d**2) / (4 * a) + (f**2) / (4 * c)
-    a = np.sqrt(F / a)
-    b = np.sqrt(F / c)
-    
-    return x0, y0, a, b
-
-# Function to detect if a path is an ellipse
-def is_ellipse(points, threshold=0.5):
-    try:
-        x0, y0, a, b = fit_ellipse(points)
-        if np.isreal(x0) and np.isreal(y0) and a > 0 and b > 0:
-            x0, y0, a, b = float(x0), float(y0), float(a), float(b)
-        else:
-            return False, None
-
-        theta = np.arctan2(points[:, 1] - y0, points[:, 0] - x0)
-        distances = ((points[:, 0] - x0) / a) ** 2 + ((points[:, 1] - y0) / b) ** 2
-        return np.std(distances) < threshold, (x0, y0, a, b)
-    except Exception as e:
-        print(f"Ellipse fitting failed: {e}")
-        return False, None
-
-# Function to detect if a path is a regular polygon
-def is_regular_polygon(points, threshold=0.5):
-    num_points = len(points)
-    if num_points < 3:
-        return False, None  # A polygon must have at least 3 points
-
-    side_lengths = np.linalg.norm(np.diff(points, axis=0, append=[points[0]]), axis=1)
-    if np.std(side_lengths) > threshold * np.mean(side_lengths):
-        return False, None
-
-    vectors = np.diff(points, axis=0, append=[points[0]])
-    angles = []
-    for i in range(num_points):
-        vec1 = vectors[i]
-        vec2 = vectors[(i + 1) % num_points]
-        cos_angle = np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
-        angle = np.arccos(np.clip(cos_angle, -1.0, 1.0))
-        angles.append(np.degrees(angle))
-
-    if np.std(angles) > threshold * np.mean(angles):
-        return False, None
-
-    return True, points
-
-# Function to detect shapes in a given path
-def detect_shapes_in_path(path):
+# Function to identify shapes within an image
+def identify_shapes(image):
     detected_shapes = []
-    
-    # Check if the path is a straight line
-    is_line, line_params = is_straight_line(path)
-    if is_line:
-        detected_shapes.append({'type': 'line', 'params': line_params})
-    
-    # Check if the path is a circle
-    is_circle_shape, circle_params = is_circle(path)
-    if is_circle_shape:
-        detected_shapes.append({'type': 'circle', 'params': circle_params})
-    
-    # Check if the path is an ellipse
-    is_ellipse_shape, ellipse_params = is_ellipse(path)
-    if is_ellipse_shape:
-        detected_shapes.append({'type': 'ellipse', 'params': ellipse_params})
-    
-    # Check if the path is a regular polygon
-    is_polygon, polygon_params = is_regular_polygon(path)
-    if is_polygon:
-        detected_shapes.append({'type': 'polygon', 'params': polygon_params})
-    
+    edge_image = cv2.Canny(image.copy(), 0, 50)
+    blurred_edges = cv2.GaussianBlur(edge_image.copy(), (15, 15), 0)
+
+    # Detect lines
+    detected_lines = cv2.HoughLinesP(blurred_edges, 1, np.pi / 2, threshold=200, minLineLength=0, maxLineGap=100)
+    if detected_lines is not None:
+        for line in detected_lines:
+            for x1, y1, x2, y2 in line:
+                detected_shapes.append(("Line", np.array([[x1, y1], [x2, y2]])))
+
+    # Detect other shapes
+    contours, _ = cv2.findContours(image.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    for contour in contours:
+        if cv2.contourArea(contour) < 500:
+            continue
+
+        epsilon = 0.03 * cv2.arcLength(contour, True)
+        approx_curve = cv2.approxPolyDP(contour, epsilon, True)
+
+        if len(approx_curve) == 3:
+            detected_shapes.append(("Triangle", approx_curve))
+        elif len(approx_curve) == 4:
+            x, y, w, h = cv2.boundingRect(approx_curve)
+            aspect_ratio = w / float(h)
+            shape = "Square" if 0.85 <= aspect_ratio <= 1.15 else "Rectangle"
+            detected_shapes.append((shape, approx_curve))
+        elif len(approx_curve) > 4:
+            contour_area = cv2.contourArea(contour)
+            enclosing_circle_center, enclosing_circle_radius = cv2.minEnclosingCircle(contour)
+            circularity = contour_area / (np.pi * enclosing_circle_radius ** 2)
+            if 0.70 <= circularity <= 1.3:
+                detected_shapes.append(("Circle", (enclosing_circle_center, enclosing_circle_radius)))
+            else:
+                detected_shapes.append(("Polygon", approx_curve))
+
+            if len(approx_curve) >= 6:
+                ellipse = cv2.fitEllipse(contour)
+                center, axes, angle = ellipse
+                axes = (int(axes[0] / 2), int(axes[1] / 2))
+                ellipse_contour = cv2.ellipse2Poly(
+                    center=(int(center[0]), int(center[1])),
+                    axes=axes,
+                    angle=int(angle),
+                    arcStart=0,
+                    arcEnd=360,
+                    delta=5
+                )
+                detected_shapes.append(("Ellipse", ellipse_contour))
+
+            if len(approx_curve) == 10:
+                detected_shapes.append(("Star", approx_curve))
+
+    shape_priority = {"Circle": 1, "Square": 2, "Rectangle": 3, "Triangle": 4, "Ellipse": 5, "Star": 6, "Polygon": 7, "Line": 8}
+
+    if detected_shapes:
+        detected_shapes = sorted(detected_shapes, key=lambda s: shape_priority.get(s[0], 9))
+        return [detected_shapes[0]]
+
     return detected_shapes
 
-# Function to plot and save detected shapes as an image
-def plot_and_save_detected_shapes(paths, shapes, output_image_path):
-    fig, ax = plt.subplots()
-    
-    # Plot original paths
-    for path in paths:
-        plt.plot(path[:, 0], path[:, 1], 'o-', color='gray')
-    
-    # Plot detected shapes
-    for shape in shapes:
-        if shape['type'] == 'line':
-            m, c = shape['params']
-            x = np.array([0, 512])
-            y = m * x + c
-            plt.plot(x, y, 'g--', label='Line')
-        elif shape['type'] == 'circle':
-            xc, yc, radius = shape['params']
-            circle = plt.Circle((xc, yc), radius, color='b', fill=False, label='Circle')
-            ax.add_patch(circle)
-        elif shape['type'] == 'ellipse':
-            x0, y0, a, b = shape['params']
-            ellipse = patches.Ellipse((x0, y0), 2*a, 2*b, angle=0, edgecolor='y', fill=False, label='Ellipse')
-            ax.add_patch(ellipse)
-        elif shape['type'] == 'polygon':
-            points = shape['params']
-            polygon = patches.Polygon(points, closed=True, edgecolor='m', fill=False, label='Polygon')
-            ax.add_patch(polygon)
+# Function to draw identified shapes on an image
+def render_shapes_on_image(image, shapes, curve_points=None):
+    if len(image.shape) == 2:
+        colored_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    else:
+        colored_image = image.copy()
 
-    ax.set_aspect('equal', 'box')
-    plt.xlabel('X')
-    plt.ylabel('Y')
-    plt.legend()
-    plt.savefig(output_image_path)
-    plt.show()
+    blank_image = np.zeros_like(colored_image)
+    shape_coordinates = []
 
-# Example usage
-csv_path = '../Regularize/frag1.csv'  # Ensure the path is correct
-output_image_path = '../Regularize/detected_shapes.png'
+    for shape, contour in shapes:
+        color = (255, 255, 255)  # White for all shapes
 
-# Read path data from CSV
-path_XYs = read_csv(csv_path)
-if path_XYs:
-    # Detect shapes
-    all_detected_shapes = []
-    for path in path_XYs:
-        detected_shapes = detect_shapes_in_path(path)
-        all_detected_shapes.extend(detected_shapes)
+        if shape == "Circle":
+            center, radius = contour
+            num_points = 100
+            angles = np.linspace(0, 2 * np.pi, num_points)
+            circle_points = np.array([
+                (int(center[0] + radius * np.cos(a)), int(center[1] + radius * np.sin(a)))
+                for a in angles
+            ])
+            cv2.polylines(blank_image, [circle_points], isClosed=True, color=color, thickness=1)
+            shape_coordinates.append(("Circle", circle_points))
+        else:
+            cv2.drawContours(blank_image, [contour], -1, color, 1)
+            shape_coordinates.append((shape, contour.squeeze()))
 
-    # Plot and save detected shapes as an image
-    plot_and_save_detected_shapes(path_XYs, all_detected_shapes, output_image_path)
-else:
-    print("No paths found in CSV.")
+    if curve_points is not None:
+        color = (255, 255, 255)
+        cv2.polylines(blank_image, [curve_points], isClosed=False, color=color, thickness=1)
+        shape_coordinates.append(("Curve", curve_points))
+
+    return blank_image, shape_coordinates
+
+# Function to combine multiple images into one
+def merge_images(image_list, positions, canvas_width=1000, canvas_height=1000):
+    merged_image = np.zeros((canvas_height, canvas_width, 3), dtype=np.uint8)
+    for img, (x_pos, y_pos) in zip(image_list, positions):
+        h, w = img.shape[:2]
+        x_pos = max(0, min(x_pos, canvas_width - w))
+        y_pos = max(0, min(y_pos, canvas_height - h))
+        mask = img != 0
+        merged_image[y_pos:y_pos + h, x_pos:x_pos + w][mask] = img[mask]
+    return merged_image
+
+# Main processing loop
+all_curves = data.groupby(['CurveID', 'ShapeType'])
+processed_images = []
+image_positions = []
+output_coordinates = []
+
+for curve_id, curve_data in all_curves:
+    x_vals, y_vals = curve_data['XCoord'].values, curve_data['YCoord'].values
+    smoothed_x, smoothed_y = smooth_curve(x_vals, y_vals, smooth_factor=0)
+    interpolated_x, interpolated_y = interpolate_curve(smoothed_x, smoothed_y, num_points=1000)
+
+    curve_position = (int(x_vals.min()), int(y_vals.min()))
+    curve_points = np.vstack((interpolated_x, interpolated_y)).T
+    image_positions.append(curve_position)
+
+    curve_image = create_image_from_points(curve_points, img_width=1000, img_height=1000)
+    identified_shapes = identify_shapes(curve_image)
+
+    final_image, shape_coords = render_shapes_on_image(curve_image, identified_shapes, curve_points=np.int32(curve_points))
+    processed_images.append(final_image)
+
+    for shape_type, coordinates in shape_coords:
+        if shape_type == "Curve":
+            for x, y in coordinates:
+                output_coordinates.append([curve_id[0], curve_id[1], x, y])
+        else:
+            for coord in coordinates:
+                output_coordinates.append([curve_id[0], curve_id[1], coord[0], coord[1]])
+
+# Combine all processed images into a final output image
+final_combined_image = merge_images(processed_images, image_positions, canvas_width=1000, canvas_height=1000)
+
+# Enlarge the final image
+scale_factor = 2.0  # Factor by which to enlarge the image
+final_resized_image = cv2.resize(final_combined_image, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_CUBIC)
+
+# Save and display the final enlarged image
+cv2.imwrite("final_combined_image_enlarged.png", final_resized_image)
+
+# Set up a larger figure size for better visualization
+plt.figure(figsize=(10, 10))  # Adjust figure size to be larger
+plt.imshow(final_resized_image, cmap='gray')
+plt.axis('off')
+plt.show()
