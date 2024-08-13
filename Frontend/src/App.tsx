@@ -2,7 +2,7 @@
 // import Image from './components/Imageuploader';
 
 import Main from './components/Main';
-import Video from './components/video';
+import Video from './pages/video';
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 
 import './App.css';
