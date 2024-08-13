@@ -135,13 +135,13 @@ const Cards: React.FC = () => {
                         </button>
                         <button 
                             className="feature-button" 
-                            onClick={() => handleFeatureClick('Plannerized')}>
-                            Regularized
+                            onClick={() => handleFeatureClick('Regularized')}>
+                            Planerized 
                         </button>
                         <button 
                             className="feature-button" 
-                            onClick={() => handleFeatureClick('Regularized')}>
-                            Planerized
+                            onClick={() => handleFeatureClick('Plannerized')}>
+                            Regularized
                         </button>
                     </div>
                 </div>
@@ -149,14 +149,14 @@ const Cards: React.FC = () => {
             {result && (
                 <div className="result-section">
                     <h3 style={{ color:'black', fontSize:'25px'}}>Result:</h3>
-                    <pre style={{ backgroundColor: ' #32CD32', padding: '20px', borderRadius: '8px', color:'white'}}>
+                    <pre style={{ backgroundColor: ' #32CD32', padding: '20px', borderRadius: '8px', color:'white', fontSize:'15px'}}>
                         <code>{result}</code>
                     </pre>
                 </div>
             )}
             {processedImage && (
                 <div className="processed-image-section">
-                    <h3>Processed Image:</h3>
+                    <h3 style={{color:'black', fontSize:'25px'}}>Processed Image:</h3>
                     <img src={processedImage} alt="Processed" className="processed-image" />
                 </div>
             )}
