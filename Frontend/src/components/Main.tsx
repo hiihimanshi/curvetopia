@@ -115,6 +115,10 @@ const Cards: React.FC = () => {
     };
 
     return (
+        <>
+        <div className="flex-container">
+            <h1>Curvetopia</h1>
+        </div>
         <div className="cards-container">
             <div className="upload-section">
                 <input 
@@ -161,6 +165,7 @@ const Cards: React.FC = () => {
                 </div>
             )}
         </div>
+        </>
     );
 };
 

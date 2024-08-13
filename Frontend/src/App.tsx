@@ -2,17 +2,19 @@
 // import Image from './components/Imageuploader';
 
 import Main from './components/Main';
+import Video from './components/video';
+import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+
 import './App.css';
 
 function App() {
   return (
-    <>
-      <div className="flex-container">
-        <h1>Curvetopia</h1>
-      </div>
-      {/* <Image /> */}
-      <Main />
-    </>
+    <Router>
+      <Routes>
+        <Route path="/" element={<Main />} />
+        <Route path="/video" element={<Video />} />
+      </Routes>
+    </Router>
   );
 }
 
